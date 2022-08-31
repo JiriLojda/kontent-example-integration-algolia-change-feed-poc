@@ -5,9 +5,9 @@ class KontentClient {
   config: KontentConfiguration;
   deliveryClient: DeliveryClient;
 
-  constructor(config: KontentConfiguration) {
+  constructor(config: KontentConfiguration, deliveryUrl?: string) {
     this.config = config;
-    this.deliveryClient = new DeliveryClient({ projectId: this.config.projectId });
+    this.deliveryClient = new DeliveryClient({ projectId: this.config.projectId, proxy: { baseUrl: deliveryUrl } });
   }
 
   // PRIVATE: processes linked content + components

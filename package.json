@@ -14,17 +14,19 @@
   },
   "homepage": "https://github.com/strizr/kontent-netlify-webhook-processor#readme",
   "dependencies": {
+    "@azure/data-tables": "^13.1.2",
     "@kentico/kontent-delivery": "^10.3.0",
     "@kentico/kontent-webhook-helper": "^1.1.0",
     "algoliasearch": "^4.8.6",
     "axios": "^0.21.1",
     "crypto": "^1.0.1",
-    "rxjs": "^6.6.3",
-    "encoding": "^0.1.13"
+    "encoding": "^0.1.13",
+    "rxjs": "^6.6.3"
   },
   "devDependencies": {
     "@babel/preset-env": "^7.11.0",
     "@babel/preset-typescript": "^7.10.4",
+    "@netlify/functions": "^1.2.0",
     "@types/aws-lambda": "^8.10.59",
     "netlify-lambda": "^2.0.1",
     "prettier": "^2.0.5",
@@ -33,5 +35,8 @@
   "scripts": {
     "build": "netlify-lambda build src/lambda",
     "ts-check": "tsc --noEmit --lib ES2015"
+  },
+  "volta": {
+    "node": "16.17.0"
   }
 }
