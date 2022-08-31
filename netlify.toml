@@ -4,3 +4,6 @@ base = "/"
 publish = "/"
 command = "npm run build"
 functions = "functions"
+
+[functions."algolia-update-webhook"]
+schedule = "* * * * *"

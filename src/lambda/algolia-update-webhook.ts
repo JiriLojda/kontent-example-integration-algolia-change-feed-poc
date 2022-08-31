@@ -72,7 +72,7 @@ const continuationTokenEntityKeys = {
 const continuationTokenHeaderName = 'x-continuation';
 
 /* FUNCTION HANDLER */
-const handlerWithoutSchedule: Handler = async (event, context) => {
+export const handler: Handler = async (event, context) => {
   const changeFeedUrl = `${DELIVERY_URL}/${PROJECT_ID}/change-feed`;
 
 
@@ -136,5 +136,5 @@ const handlerWithoutSchedule: Handler = async (event, context) => {
     body: `${JSON.stringify(indexedItems)}`,
   };
 };
-
-export const handler = schedule('0-59 * * * *', handlerWithoutSchedule);
+//
+// export const handler = schedule('0-59 * * * *', handlerWithoutSchedule);
