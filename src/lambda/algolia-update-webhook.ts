@@ -1,7 +1,4 @@
-import { APIGatewayEvent, APIGatewayProxyEventQueryStringParameters, Context } from 'aws-lambda'
-import { Handler, schedule } from '@netlify/functions';
-
-import { IWebhookDeliveryResponse, IWebhookDeliveryItem, SignatureHelper } from "@kentico/kontent-webhook-helper";
+import { Handler } from '@netlify/functions';
 
 import { SearchableItem, SearchProjectConfiguration } from "./utils/search-model"
 import AlgoliaClient from "./utils/algolia-client";
@@ -20,7 +17,7 @@ type ChangeFeedItem = Readonly<{
   type: string;
   language: string;
   collection: string;
-  change_type: string;
+  change_type: 'changed' | 'deleted';
   timestamp: string;
 }>;
 
@@ -37,8 +34,7 @@ async function processNotIndexedContent(codename: string, language: string, conf
   // the item has slug => new record
   if (itemFromDelivery && itemFromDelivery[config.kontent.slugCodename]) {
     // creates a searchable structure based on the content's structure
-    const searchableStructure = kontentClient.createSearchableStructure([itemFromDelivery], content);
-    return searchableStructure;
+    return kontentClient.createSearchableStructure([itemFromDelivery], content);
   }
 
   return [];
@@ -61,8 +57,7 @@ async function processIndexedContent(codename: string, language: string, config:
   }
 
   // some content has been found => update existing item by processing it once again
-  const searchableStructure = kontentClient.createSearchableStructure([itemFromDelivery], content);
-  return searchableStructure;
+  return kontentClient.createSearchableStructure([itemFromDelivery], content);
 }
 const tablesClient = TableClient.fromConnectionString(CONTINUATION_TOKENS_CONNECTION_STRING, CONTINUATION_TOKENS_TABLE_NAME);
 const continuationTokenEntityKeys = {
@@ -108,28 +103,18 @@ export const handler: Handler = async (event, context) => {
   }
 
   const algoliaClient = new AlgoliaClient(config.algolia);
-  const itemsToIndex: SearchableItem[] = [];
 
-  // go through updated items
-  for (const affectedItem of changes) {
-    // we are looking for the ultimate "parent"/indexed item that contains the content that has been updated
+  const codenamesToRemoveFromIndex = changes
+    .filter(c => c.change_type === "deleted")
+    .map(c => c.codename);
+  await algoliaClient.removeFromIndex(codenamesToRemoveFromIndex);
 
-    // found an item in algolia
-    const foundItems: SearchableItem[] = await algoliaClient.searchIndex(affectedItem.codename, affectedItem.language);
+  const itemsToReindex = ([] as SearchableItem[]).concat(...await Promise.all(changes
+    .filter(c => c.change_type === "changed")
+    .map(c => processNotIndexedContent(c.codename, c.language, config))));
 
-    // item not found in algolia  => new content to be indexed?
-    if (foundItems.length == 0) {
-      itemsToIndex.push(...await processNotIndexedContent(affectedItem.codename, affectedItem.language, config));
-    }
-
-    // we actually found some items in algolia => update or delete?
-    for (const foundItem of foundItems) {
-      itemsToIndex.push(...await processIndexedContent(foundItem.codename, foundItem.language, config, algoliaClient));
-    }
-  }
-
-  const uniqueItems = Array.from(new Set(itemsToIndex.map(item => item.codename))).map(codename => { return itemsToIndex.find(item => item.codename === codename) });
-  const indexedItems: string[] = await algoliaClient.indexSearchableStructure(uniqueItems);
+  const uniqueItems = Array.from(new Set(itemsToReindex.map(item => item.codename))).map(codename => itemsToReindex.find(item => item.codename === codename));
+  const indexedItems = await algoliaClient.indexSearchableStructure(uniqueItems);
 
   return {
     statusCode: 200,
