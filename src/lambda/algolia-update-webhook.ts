@@ -137,4 +137,4 @@ const handlerWithoutSchedule: Handler = async (event, context) => {
   };
 };
 
-export const handler = schedule('0-59/5 * * * *', handlerWithoutSchedule);
+export const handler = schedule('0-59 * * * *', handlerWithoutSchedule);
