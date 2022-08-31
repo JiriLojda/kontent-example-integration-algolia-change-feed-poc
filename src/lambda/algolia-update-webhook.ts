@@ -83,7 +83,7 @@ export const handler: Handler = async (event, context) => {
   }
 
   const changes: ReadonlyArray<ChangeFeedItem> = await axios.get(changeFeedUrl, { headers: { [continuationTokenHeaderName]: continuationToken } })
-    .then(r => tablesClient.upsertEntity({ ...continuationTokenEntityKeys, token: r.headers[continuationTokenHeaderName] }).then(() => r.data));
+    .then(r => tablesClient.upsertEntity({...continuationTokenEntityKeys, token: r.headers[continuationTokenHeaderName]}).then(() => r.data || []));
 
   // create configuration from the webhook body/query params
   const config = {
