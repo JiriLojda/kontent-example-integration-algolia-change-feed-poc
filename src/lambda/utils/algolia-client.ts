@@ -45,9 +45,9 @@ class AlgoliaClient {
   }
 
   // removes items from the index
-  async removeFromIndex(codenames: string[]): Promise<string[]> {
+  async removeFromIndex(objectIds: string[]): Promise<string[]> {
     try {
-      const response = await this.index.deleteObjects(codenames).wait();
+      const response = await this.index.deleteObjects(objectIds).wait();
       return response.objectIDs;
     }
     catch (error) {

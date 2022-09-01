@@ -2,7 +2,7 @@ import { Handler } from '@netlify/functions';
 
 import { SearchableItem, SearchProjectConfiguration } from "./utils/search-model"
 import AlgoliaClient from "./utils/algolia-client";
-import KontentClient from './utils/kontent-client';
+import KontentClient, { createObjectId } from './utils/kontent-client';
 import { ContentItem } from '@kentico/kontent-delivery';
 import { TableClient } from "@azure/data-tables";
 import axios from "axios";
@@ -21,44 +21,6 @@ type ChangeFeedItem = Readonly<{
   timestamp: string;
 }>;
 
-// processes affected content (about which we have been notified by the webhook)
-async function processNotIndexedContent(codename: string, language: string, config: SearchProjectConfiguration) {
-  const kontentConfig = config.kontent;
-  kontentConfig.language = language;
-  const kontentClient = new KontentClient(kontentConfig, DELIVERY_URL);
-
-  // get all content for requested codename
-  const content: ContentItem[] = await kontentClient.getAllContentForCodename(codename);
-  const itemFromDelivery = content.find(item => item.system.codename == codename);
-
-  // the item has slug => new record
-  if (itemFromDelivery && itemFromDelivery[config.kontent.slugCodename]) {
-    // creates a searchable structure based on the content's structure
-    return kontentClient.createSearchableStructure([itemFromDelivery], content);
-  }
-
-  return [];
-}
-
-// processes affected content (about which we have been notified by the webhook)
-async function processIndexedContent(codename: string, language: string, config: SearchProjectConfiguration, algoliaClient: AlgoliaClient) {
-  const kontentConfig = config.kontent;
-  kontentConfig.language = language;
-  const kontentClient = new KontentClient(kontentConfig);
-
-  // get all content for requested codename
-  const content: ContentItem[] = await kontentClient.getAllContentForCodename(codename);
-  const itemFromDelivery = content.find(item => item.system.codename == codename);
-
-  // nothing found in Kontent => item has been removed
-  if (!itemFromDelivery) {
-    await algoliaClient.removeFromIndex([codename]);
-    return [];
-  }
-
-  // some content has been found => update existing item by processing it once again
-  return kontentClient.createSearchableStructure([itemFromDelivery], content);
-}
 const tablesClient = TableClient.fromConnectionString(CONTINUATION_TOKENS_CONNECTION_STRING, CONTINUATION_TOKENS_TABLE_NAME);
 const continuationTokenEntityKeys = {
   partitionKey: 'algolia',
@@ -104,16 +66,27 @@ export const handler: Handler = async (event, context) => {
 
   const algoliaClient = new AlgoliaClient(config.algolia);
 
-  const codenamesToRemoveFromIndex = changes
-    .filter(c => c.change_type === "deleted")
-    .map(c => c.codename);
-  await algoliaClient.removeFromIndex(codenamesToRemoveFromIndex);
-
-  const itemsToReindex = ([] as SearchableItem[]).concat(...await Promise.all(changes
+  const changedItemsSubtrees = await Promise.all(changes
     .filter(c => c.change_type === "changed")
-    .map(c => processNotIndexedContent(c.codename, c.language, config))));
+    .map(c => loadItemSubtreeFromKontent(c.codename, c.language, config)))
+
+  const deletedObjectIds = changes
+    .filter(c => c.change_type === "deleted")
+    .map(c => createObjectId(c.codename, c.language));
+  const objectIdsChangedToNotIndexable = changedItemsSubtrees
+    .filter(notNull)
+    .filter(([i]) => !shouldBeIndexed(i, config))
+    .map(([i]) => createObjectId(i.system.codename, i.system.language));
+  console.log('removing objectIds: ', [...deletedObjectIds, ...objectIdsChangedToNotIndexable]);
+  await algoliaClient.removeFromIndex([...deletedObjectIds, ...objectIdsChangedToNotIndexable]);
+
+  const itemsToReindex = ([] as SearchableItem[]).concat(...changedItemsSubtrees
+    .filter(notNull)
+    .filter(([i]) => shouldBeIndexed(i, config))
+    .map(([i, tree]) => createSearchableStructure(i, tree, config)));
 
   const uniqueItems = Array.from(new Set(itemsToReindex.map(item => item.codename))).map(codename => itemsToReindex.find(item => item.codename === codename));
+  console.log('updating objectIds: ', uniqueItems.map(i => i && i.objectID));
   const indexedItems = await algoliaClient.indexSearchableStructure(uniqueItems);
 
   return {
@@ -121,5 +94,29 @@ export const handler: Handler = async (event, context) => {
     body: `${JSON.stringify(indexedItems)}`,
   };
 };
-//
-// export const handler = schedule('0-59 * * * *', handlerWithoutSchedule);
+
+const loadItemSubtreeFromKontent = async (codename: string, language: string, config: SearchProjectConfiguration) => {
+  const kontentConfig = { ...config.kontent, language };
+  const kontentClient = new KontentClient(kontentConfig, DELIVERY_URL);
+
+  // get all content for requested codename
+  const content = await kontentClient.getAllContentForCodename(codename);
+  const itemFromDelivery = content.find(item => item.system.codename == codename);
+  if (!itemFromDelivery) {
+    return null;
+  }
+
+  return [itemFromDelivery, content] as const;
+}
+
+const shouldBeIndexed = (item: ContentItem, config: SearchProjectConfiguration): boolean =>
+  !!item[config.kontent.slugCodename];
+
+const createSearchableStructure = (item: ContentItem, subtree: ContentItem[], config: SearchProjectConfiguration) => {
+  const kontentConfig = { ...config.kontent, language: item.system.language };
+  const kontentClient = new KontentClient(kontentConfig, DELIVERY_URL);
+
+  return kontentClient.createSearchableStructure([item], subtree);
+};
+
+const notNull = <T>(i: T | null): i is T => i !== null;

@@ -114,7 +114,7 @@ class KontentClient {
     for (const item of contentWithSlug) {
       // searchable item structure
       let searchableItem: SearchableItem = {
-        objectID: `${item.system.codename}_${item.system.language}`, 
+        objectID: createObjectId(item.system.codename, item.system.language),
         id: item.system.id,
         codename: item.system.codename,
         name: item.system.name,
@@ -132,5 +132,7 @@ class KontentClient {
     return searchableStructure;
   }
 }
+
+export const createObjectId = (codename: string, language: string) => `${codename}_${language}`;
 
 export default KontentClient;
